@@ -7,6 +7,7 @@ from pwnagotchi.utils import StatusFile, remove_whitelisted
 from pwnagotchi import plugins
 from json.decoder import JSONDecodeError
 
+
 class pwnamap(plugins.Plugin):
     __author__ = 'Original: adi1708, modified by JAKAMI99'
     __version__ = '1.0.0'
@@ -24,55 +25,65 @@ class pwnamap(plugins.Plugin):
         self.options = dict()
         self.skip = list()
 
-    def _upload_to_pwnamap(self, path, timeout=30):
+    def _upload_to_pwnamap(self, file_path, timeout=30):
         """
         Uploads the file to the specified endpoint.
         """
-        # Modify the API URL to include the specific endpoint
-        api_url = f"{self.options['api_url']}:{self.options['api_port']}/api/upload"
+
+        # Remove trailing slash if it exists
+        api_url = self.options["api_url"].rstrip("/")
+        
+        # Construct the full API URL with port and endpoint
+        full_api_url = f"{api_url}:{self.options['api_port']}/api/upload"
 
         headers = {
-            'Authorization': f'Bearer {self.options.get("api_key")}'
+            "X-API-KEY": self.options.get("api_key")
         }
 
-        with open(path, 'rb') as file_to_upload:
+        with open(file_path, 'rb') as file_to_upload:
             payload = {'file': file_to_upload}
 
             try:
-                result = requests.post(api_url, files=payload, headers=headers, timeout=timeout)
+                result = requests.post(full_api_url, files=payload, headers=headers, timeout=timeout)
 
-                if 'already submitted' in result.text:
-                    logging.debug("%s was already submitted.", path)
+                if result.status_code == 200:
+                    if 'already submitted' in result.text:
+                        logging.info("%s was already submitted.", file_path)
+                else:
+                    logging.error("Upload failed with status: %s", result.status_code)
+                    raise requests.exceptions.RequestException(f"Upload failed: {result.text}")
 
-            except requests.exceptions.RequestException as req_e:
-                raise req_e
+            except requests.exceptions.RequestException:
+              raise
+
+
 
     def on_loaded(self):
         """
-        This method is called when the plugin gets loaded.
+        Gets called when the plugin gets loaded
         """
-
-        if 'api_url' not in self.options or not self.options['api_url']:
-            logging.error("pwnamap: API-URL isn't set. Can't upload, no endpoint configured.")
+        if 'api_key' not in self.options or ('api_key' in self.options and not self.options['api_key']):
+            logging.error("pwnamap: API-KEY isn't set. Can't upload to pwnamap")
             return
-        
         if 'api_port' not in self.options or not self.options['api_port']:
             logging.error("pwnamap: API-Port isn't set. Can't upload, no endpoint port configured.")
             return
-
-        if 'api_key' not in self.options or not self.options['api_key']:
-            logging.error("pwnamap: API-Key isn't set. Can't authenticate.")
+        if 'api_url' not in self.options or ('api_url' in self.options and not self.options['api_url']):
+            logging.error("pwnamap: API-URL isn't set. Can't upload, no endpoint configured.")
             return
-        
-        if 'whitelist' not in self.options:
-            self.options['whitelist'] = list()
 
         self.ready = True
         logging.info("pwnamap: plugin loaded")
 
+    def on_webhook(self, path, request):
+        from flask import make_response, redirect
+        response = make_response(redirect(self.options['api_url'], code=302))
+        response.set_cookie('key', self.options['api_key'])
+        return response
+
     def on_internet_available(self, agent):
         """
-        Called when there's internet connectivity in manual mode.
+        Called in manual mode when there's internet connectivity
         """
         if not self.ready or self.lock.locked():
             return
@@ -80,32 +91,30 @@ class pwnamap(plugins.Plugin):
         with self.lock:
             config = agent.config()
             display = agent.view()
+            reported = self.report.data_field_or('reported', default=list())
             handshake_dir = config['bettercap']['handshakes']
-
-            handshake_files = os.listdir(handshake_dir)
-
-            handshake_paths = [os.path.join(handshake_dir, file) for file in handshake_files if file.endswith('.pcap')]
-            handshake_paths = remove_whitelisted(handshake_paths, self.options['whitelist'])
-
-            handshake_new = set(handshake_paths) - set(self.skip)
+            handshake_filenames = os.listdir(handshake_dir)
+            handshake_paths = [os.path.join(handshake_dir, filename) for filename in handshake_filenames if filename.endswith('.pcap')]
+            handshake_paths = remove_whitelisted(handshake_paths, config['main']['whitelist'])
+            handshake_new = set(handshake_paths) - set(reported) - set(self.skip)
 
             if handshake_new:
-                logging.info("pwnamap: Uploading new handshakes to %s", self.options.api_url)
-
+                logging.info("pwnamap: Internet connectivity detected. Uploading new handshakes to your pwnamap")
                 for idx, handshake in enumerate(handshake_new):
-                    display.on_uploading(f"Uploading ({idx + 1}/{len(handshake_new)})")
+                    display.on_uploading(f"pwnamap ({idx + 1}/{len(handshake_new)})")
 
                     try:
                         self._upload_to_pwnamap(handshake)
+                        reported.append(handshake)
+                        self.report.update(data={'reported': reported})
                         logging.debug("pwnamap: Successfully uploaded %s", handshake)
-
                     except requests.exceptions.RequestException as req_e:
                         self.skip.append(handshake)
                         logging.debug("pwnamap: %s", req_e)
                         continue
-
                     except OSError as os_e:
                         logging.debug("pwnamap: %s", os_e)
                         continue
 
                 display.on_normal()
+
