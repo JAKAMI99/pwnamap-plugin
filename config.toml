@@ -1,0 +1,6 @@
+### Add the following lines to the configuration file of your pwnagotchi (usually located under /etc/pwnagotchi/config.toml)
+
+main.plugins.pwnamap.enabled = true
+main.plugins.pwnamap.api_url = "https://jakami.de" # Change this to your URL (Format: http://DOMAIN_or_IP)
+main.plugins.pwnamap.api_port= "1337"
+main.plugins.pwnamap.whitelist = []        
