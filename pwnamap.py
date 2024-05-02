@@ -93,8 +93,9 @@ class pwnamap(plugins.Plugin):
             display = agent.view()
             reported = self.report.data_field_or('reported', default=list())
             handshake_dir = config['bettercap']['handshakes']
+            handshake_extensions = ('.pcap', '.22000') # Extensions to upload
             handshake_filenames = os.listdir(handshake_dir)
-            handshake_paths = [os.path.join(handshake_dir, filename) for filename in handshake_filenames if filename.endswith('.pcap')]
+            handshake_paths = [os.path.join(handshake_dir, filename) for filename in handshake_filenames if filename.endswith(handshake_extensions)]
             handshake_paths = remove_whitelisted(handshake_paths, config['main']['whitelist'])
             handshake_new = set(handshake_paths) - set(reported) - set(self.skip)
 
