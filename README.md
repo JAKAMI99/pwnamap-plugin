@@ -5,7 +5,9 @@ https://github.com/JAKAMI99/pwnamap
 
 ## Features
 [x] Autoupload all new Handshakes, which will be listed in /handshakes in your pwnamap WebUI
+
 [ ] Send information about Stats (Sessions, Epochs, seen Networks,...)
+
 [ ] More soon™
 
 
